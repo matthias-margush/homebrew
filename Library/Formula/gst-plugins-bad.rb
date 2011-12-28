@@ -8,6 +8,7 @@ class GstPluginsBad < Formula
   depends_on 'pkg-config' => :build
   depends_on 'gettext'
   depends_on 'gst-plugins-base'
+  depends_on 'gst-plugins-good'
 
   # These optional dependencies are based on the intersection of
   # gst-plugins-bad-0.10.21/REQUIREMENTS and Homebrew formulas
@@ -21,6 +22,7 @@ class GstPluginsBad < Formula
   depends_on 'faad2' => :optional
   depends_on 'libsndfile' => :optional
   depends_on 'schroedinger' => :optional
+  depends_on 'rtmpdump' => :optional
 
   def install
     ENV.append "CFLAGS", "-no-cpp-precomp -funroll-loops -fstrict-aliasing"
