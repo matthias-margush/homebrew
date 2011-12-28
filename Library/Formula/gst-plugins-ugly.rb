@@ -20,7 +20,7 @@ class GstPluginsUgly < Formula
   depends_on 'two-lame' => :optional
   depends_on 'libshout' => :optional
   depends_on 'aalib' => :optional
-  depends_on 'libcaca' => :optional
+#  depends_on 'libcaca' => :optional
   depends_on 'libdvdread' => :optional
   depends_on 'sdl' => :optional
   depends_on 'libmpeg2' => :optional
