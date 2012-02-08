@@ -17,7 +17,7 @@ class Mongodb < Formula
     }
   }
 
-  package = (Hardware.is_64_bit? and not ARGV.include? '--32bit') ? packages[:x86_64] : packages[:i386]
+  package = (Hardware.is_64_bit? and not ARGV.build_32_bit?) ? packages[:x86_64] : packages[:i386]
 
   url     package[:url]
   md5     package[:md5]
@@ -27,7 +27,7 @@ class Mongodb < Formula
 
   def options
     [
-        ['--32bit', 'Override arch detection and install the 32-bit version.'],
+        ['--32-bit', 'Build 32-bit only.'],
         ['--nojournal', 'Disable write-ahead logging (Journaling)'],
         ['--rest', 'Enable the REST Interface on the HTTP Status Page'],
     ]
@@ -43,8 +43,8 @@ class Mongodb < Formula
 
     # Write the configuration files and launchd script
     (prefix+'mongod.conf').write mongodb_conf
-    (prefix+'org.mongodb.mongod.plist').write startup_plist
-    (prefix+'org.mongodb.mongod.plist').chmod 0644
+    plist_path.write startup_plist
+    plist_path.chmod 0644
   end
 
   def caveats
@@ -52,25 +52,29 @@ class Mongodb < Formula
     s += <<-EOS.undent
     If this is your first install, automatically load on login with:
         mkdir -p ~/Library/LaunchAgents
-        cp #{prefix}/org.mongodb.mongod.plist ~/Library/LaunchAgents/
-        launchctl load -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
+        cp #{plist_path} ~/Library/LaunchAgents/
+        launchctl load -w ~/Library/LaunchAgents/#{plist_path.basename}
 
-    If this is an upgrade and you already have the org.mongodb.mongod.plist loaded:
-        launchctl unload -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
-        cp #{prefix}/org.mongodb.mongod.plist ~/Library/LaunchAgents/
-        launchctl load -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
+    If this is an upgrade and you already have the #{plist_path.basename} loaded:
+        launchctl unload -w ~/Library/LaunchAgents/#{plist_path.basename}
+        cp #{plist_path} ~/Library/LaunchAgents/
+        launchctl load -w ~/Library/LaunchAgents/#{plist_path.basename}
 
     Or start it manually:
         mongod run --config #{prefix}/mongod.conf
+
+    The launchctl plist above expects the config file to be at #{etc}/mongod.conf.
+    If this is a first install, you can copy one from #{prefix}/mongod.conf:
+        cp #{prefix}/mongod.conf #{etc}/mongod.conf
     EOS
 
     if ARGV.include? "--nojournal"
-        s += ""
+        s += "\n"
         s += <<-EOS.undent
         Write Ahead logging (Journaling) has been disabled.
         EOS
     else
-        s += ""
+        s += "\n"
         s += <<-EOS.undent
         MongoDB 1.8+ includes a feature for Write Ahead Logging (Journaling), which has been enabled by default.
         To disable journaling, use --nojournal.
@@ -114,13 +118,13 @@ class Mongodb < Formula
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>org.mongodb.mongod</string>
+  <string>#{plist_name}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>#{bin}/mongod</string>
+    <string>#{HOMEBREW_PREFIX}/bin/mongod</string>
     <string>run</string>
     <string>--config</string>
-    <string>#{prefix}/mongod.conf</string>
+    <string>#{etc}/mongod.conf</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
