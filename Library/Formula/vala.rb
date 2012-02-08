@@ -7,6 +7,7 @@ class Vala < Formula
   sha256 'bef8c803e6e84d6dd2c6e771b72245ae268f49f554f3d00b2c4a0b7a28f4a439'
 
   depends_on 'pkg-config' => :build
+  depends_on 'xz'
   depends_on 'gettext'
   depends_on 'glib'
 
