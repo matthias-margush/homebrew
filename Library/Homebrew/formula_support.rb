@@ -19,7 +19,9 @@ class SoftwareSpecification
   def initialize url, specs=nil
     raise "No url provided" if url.nil?
     @url = url
-    unless specs.nil?
+    if specs.nil?
+      @using = nil
+    else
       # Get download strategy hint, if any
       @using = specs.delete :using
       # The rest of the specs are for source control
@@ -67,29 +69,5 @@ EOS
     else
       @reason.strip
     end
-  end
-end
-
-
-# Used to annotate formulae that won't build correctly with LLVM.
-class FailsWithLLVM
-  attr_reader :msg, :data, :build
-
-  def initialize msg=nil, data=nil
-    if msg.nil? or msg.kind_of? Hash
-      @msg = "(No specific reason was given)"
-      data = msg
-    else
-      @msg = msg
-    end
-    @data = data
-    @build = data.delete :build rescue nil
-  end
-
-  def reason
-    s = @msg
-    s += "Tested with LLVM build #{@build}" unless @build == nil
-    s += "\n"
-    return s
   end
 end

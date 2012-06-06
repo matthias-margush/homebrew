@@ -1,15 +1,15 @@
 require 'formula'
 
 class ClosureCompiler < Formula
-  url 'http://closure-compiler.googlecode.com/files/compiler-20110615.tar.gz'
   homepage 'http://code.google.com/p/closure-compiler/'
-  md5 '7ba597fa67b187df23413eb0ca50f4cb'
+  url 'http://closure-compiler.googlecode.com/files/compiler-20120430.tar.gz'
+  sha1 '8adabd3a4307a4168cb050cdcc588e82060d15d3'
 
   def install
     libexec.install "compiler.jar"
     (bin+'closure').write <<-EOS.undent
       #!/bin/bash
-      java -jar #{libexec}/compiler.jar $@
+      java -jar "#{libexec}/compiler.jar" "$@"
     EOS
   end
 end

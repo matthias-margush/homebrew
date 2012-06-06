@@ -1,14 +1,39 @@
 require 'formula'
 
-def build_java?;      ARGV.include? "--java";   end
-def build_perl?;      ARGV.include? "--perl";   end
-def build_python?;    ARGV.include? "--python"; end
-def build_ruby?;      ARGV.include? "--ruby";   end
+def build_java?;   ARGV.include? "--java";   end
+def build_perl?;   ARGV.include? "--perl";   end
+def build_python?; ARGV.include? "--python"; end
+def build_ruby?;   ARGV.include? "--ruby";   end
+def with_unicode_path?; ARGV.include? "--unicode-path"; end
+
+class UniversalNeon < Requirement
+  def message; <<-EOS.undent
+      A universal build was requested, but neon was already built for a single arch.
+      You may need to `brew rm neon` first.
+    EOS
+  end
+  def satisfied?
+    f = Formula.factory('neon')
+    !f.installed? || archs_for_command(f.lib+'libneon.dylib').universal?
+  end
+end
+
+class UniversalSqlite < Requirement
+  def message; <<-EOS.undent
+      A universal build was requested, but sqlite was already built for a single arch.
+      You may need to `brew rm sqlite` first.
+    EOS
+  end
+  def satisfied?
+    f = Formula.factory('sqlite')
+    !f.installed? || archs_for_command(f.lib+'libsqlite3.dylib').universal?
+  end
+end
 
 class Subversion < Formula
   homepage 'http://subversion.apache.org/'
-  url 'http://www.apache.org/dyn/closer.cgi?path=subversion/subversion-1.7.2.tar.bz2'
-  sha1 '8c0824aeb7f42da1ff4f7cd296877af7f59812bb'
+  url 'http://www.apache.org/dyn/closer.cgi?path=subversion/subversion-1.7.5.tar.bz2'
+  sha1 '05c079762690d5ac1ccd2549742e7ef70fa45cf1'
 
   depends_on 'pkg-config' => :build
 
@@ -18,6 +43,11 @@ class Subversion < Formula
   depends_on 'neon'
   depends_on 'sqlite'
 
+  if ARGV.build_universal?
+    depends_on UniversalNeon.new
+    depends_on UniversalSqlite.new
+  end
+
   def options
     [
       ['--java', 'Build Java bindings.'],
@@ -25,18 +55,16 @@ class Subversion < Formula
       ['--python', 'Build Python bindings.'],
       ['--ruby', 'Build Ruby bindings.'],
       ['--universal', 'Build as a Universal Intel binary.'],
+      ['--unicode-path', 'Include support for OS X UTF-8-MAC filename'],
     ]
   end
 
-  def check_neon_arch
-    # Check that Neon was built universal if we are building w/ --universal
-    neon = Formula.factory('neon')
-    if neon.installed?
-      neon_arch = archs_for_command(neon.lib+'libneon.dylib')
-      unless neon_arch.universal?
-        opoo "A universal build was requested, but neon was already built for a single arch."
-        puts "You may need to `brew rm neon` first."
-      end
+  def patches
+    # Patch for Subversion handling of OS X UTF-8-MAC filename.
+    if with_unicode_path?
+      { :p0 =>
+        "https://raw.github.com/gist/1900750/4888cafcf58f7355e2656fe192a77e2b6726e338/patch-path.c.diff"
+      }
     end
   end
 
@@ -53,10 +81,7 @@ class Subversion < Formula
       end
     end
 
-    if ARGV.build_universal?
-      ENV.universal_binary
-      check_neon_arch
-    end
+    ENV.universal_binary if ARGV.build_universal?
 
     # Use existing system zlib
     # Use dep-provided other libraries
@@ -65,7 +90,7 @@ class Subversion < Formula
             "--prefix=#{prefix}",
             "--with-ssl",
             "--with-zlib=/usr",
-            "--with-sqlite=/usr/local",
+            "--with-sqlite=#{HOMEBREW_PREFIX}",
             # use our neon, not OS X's
             "--disable-neon-version-check",
             "--disable-mod-activation",
@@ -74,6 +99,10 @@ class Subversion < Formula
 
     args << "--enable-javahl" << "--without-jikes" if build_java?
     args << "--with-ruby-sitedir=#{lib}/ruby" if build_ruby?
+
+    # The system Python is built with llvm-gcc, so we override this
+    # variable to prevent failures due to incompatible CFLAGS
+    ENV['ac_cv_python_compile'] = ENV.cc
 
     system "./configure", *args
     system "make"
@@ -147,6 +176,18 @@ class Subversion < Formula
         You may need to link the Java bindings into the Java Extensions folder:
           sudo mkdir -p /Library/Java/Extensions
           sudo ln -s #{HOMEBREW_PREFIX}/lib/libsvnjavahl-1.dylib /Library/Java/Extensions/libsvnjavahl-1.dylib
+
+      EOS
+    end
+
+    if with_unicode_path?
+      s += <<-EOS.undent
+        This unicode-path version implements a hack to deal with composed/decomposed
+        unicode handling on Mac OS X which is different from linux and windows.
+        It is an implementation of solution 1 from
+        http://svn.collab.net/repos/svn/trunk/notes/unicode-composition-for-filenames
+        which _WILL_ break some setups. Please be sure you understand what you
+        are asking for when you install this version.
 
       EOS
     end

@@ -1,10 +1,9 @@
 require 'formula'
-require 'hardware'
 
 class Postgresql < Formula
   homepage 'http://www.postgresql.org/'
-  url 'http://ftp.postgresql.org/pub/source/v9.1.2/postgresql-9.1.2.tar.bz2'
-  md5 '7dbff52221954c46595313eb7f92c3e0'
+  url 'http://ftp.postgresql.org/pub/source/v9.1.3/postgresql-9.1.3.tar.bz2'
+  md5 '641e1915f7ebfdc9f138e4c55b6aec0e'
 
   depends_on 'readline'
   depends_on 'libxml2' if MacOS.leopard? # Leopard libxml is too old
@@ -13,6 +12,7 @@ class Postgresql < Formula
   def options
     [
       ['--32-bit', 'Build 32-bit only.'],
+      ['--without-ossp-uuid', 'Build without OSSP uuid.'],
       ['--no-python', 'Build without Python support.'],
       ['--no-perl', 'Build without Perl support.'],
       ['--enable-dtrace', 'Build with DTrace support.']
@@ -34,9 +34,9 @@ class Postgresql < Formula
             "--with-krb5",
             "--with-openssl",
             "--with-libxml",
-            "--with-libxslt",
-            "--with-ossp-uuid"]
+            "--with-libxslt"]
 
+    args << "--with-ossp-uuid" unless ARGV.include? '--without-ossp-uuid'
     args << "--with-python" unless ARGV.include? '--no-python'
     args << "--with-perl" unless ARGV.include? '--no-perl'
     args << "--enable-dtrace" if ARGV.include? '--enable-dtrace'
