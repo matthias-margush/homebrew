@@ -4,6 +4,7 @@ class Rtmpdump < Formula
   url 'http://rtmpdump.mplayerhq.hu/download/rtmpdump-2.3.tgz'
   homepage 'http://rtmpdump.mplayerhq.hu'
   md5 'eb961f31cd55f0acf5aad1a7b900ef59'
+  head 'git://git.ffmpeg.org/rtmpdump'
 
   head 'git://git.ffmpeg.org/rtmpdump'
 
@@ -15,18 +16,19 @@ class Rtmpdump < Formula
   end
 
   # Use dylib instead of so
-  def patches; DATA; end unless ARGV.build_head?
+  def patches; DATA if !ARGV.build_head?; end
 
   def install
-    ENV.deparallelize
-    sys_type = ARGV.build_head? ? "darwin" : "posix"
-    system "make", "CC=#{ENV.cc}",
-                   "XCFLAGS=#{ENV.cflags}",
-                   "XLDFLAGS=#{ENV.ldflags}",
-                   "MANDIR=#{man}",
-                   "SYS=#{sys_type}",
-                   "prefix=#{prefix}",
-                   "install"
+    ENV.j1
+    if ARGV.build_head? then
+      system "make SYS=darwin prefix=#{prefix} MANDIR=#{man} CRYPTO= install"
+    else
+      inreplace ["Makefile", "librtmp/Makefile"] do |s|
+        s.change_make_var! "CC", ENV['CC']
+        s.change_make_var! "LD", ENV['LD']
+      end
+      system "make", "prefix=#{prefix}", "MANDIR=#{man}", "SYS=posix", "install"
+    end
   end
 end
 

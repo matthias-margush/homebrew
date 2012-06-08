@@ -18,8 +18,8 @@ class GstPluginsGood < Formula
   depends_on 'libcdio' => :optional
   depends_on 'esound' => :optional
   depends_on 'flac' => :optional
+  #depends_on 'libcaca' => :optional
   depends_on 'jpeg' => :optional
-  depends_on 'libcaca' => :optional
   depends_on 'libdv' => :optional
   depends_on 'libshout' => :optional
   depends_on 'speex' => :optional

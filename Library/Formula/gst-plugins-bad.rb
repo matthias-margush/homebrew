@@ -8,6 +8,7 @@ class GstPluginsBad < Formula
   depends_on 'pkg-config' => :build
   depends_on 'gettext'
   depends_on 'gst-plugins-base'
+  depends_on 'gst-plugins-good'
 
   # These optional dependencies are based on the intersection of
   # gst-plugins-bad-0.10.21/REQUIREMENTS and Homebrew formulas
