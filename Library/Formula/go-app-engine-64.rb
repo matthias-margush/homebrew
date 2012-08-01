@@ -9,7 +9,9 @@ class GoAppEngine64 < Formula
     cd '..'
     share.install 'google_appengine' => name
     bin.mkpath
-    %w[appcfg.py bulkload_client.py bulkloader.py dev_appserver.py download_appstats.py].each do |fn|
+    %w[
+      appcfg.py bulkload_client.py bulkloader.py dev_appserver.py download_appstats.py
+    ].each do |fn|
       ln_s share+name+fn, bin
     end
   end
