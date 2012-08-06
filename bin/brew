@@ -1,4 +1,4 @@
-#!/System/Library/Frameworks/Ruby.framework/Versions/1.8/usr/bin/ruby
+#!/usr/bin/env ruby
 # -*- coding: utf-8 -*-
 
 HOMEBREW_BREW_FILE = ENV['HOMEBREW_BREW_FILE'] = File.expand_path(__FILE__)
@@ -31,11 +31,13 @@ case HOMEBREW_PREFIX.to_s when '/', '/usr'
   # it may work, but I only see pain this route and don't want to support it
   abort "Cowardly refusing to continue at this prefix: #{HOMEBREW_PREFIX}"
 end
-if MACOS and MACOS_VERSION < 10.5
-  abort <<-EOABORT.undent
-    Homebrew requires Leopard or higher. For Tiger support, see:
-    http://github.com/sceaga/homebrew/tree/tiger
-  EOABORT
+if SystemCommand.platform == :mac
+  if MACOS_VERSION < 10.5
+    abort <<-EOABORT.undent
+      Homebrew requires Leopard or higher. For Tiger support, see:
+      http://github.com/sceaga/homebrew/tree/tiger
+    EOABORT
+  end
 end
 
 # Many Pathname operations use getwd when they shouldn't, and then throw
@@ -44,7 +46,11 @@ Dir.getwd rescue abort "The current working directory doesn't exist, cannot proc
 
 
 def require? path
-  require path.to_s.chomp
+  if path.nil?
+    nil
+  else
+    require path.to_s.chomp
+  end
 rescue LoadError => e
   # HACK :( because we should raise on syntax errors but
   # not if the file doesn't exist. TODO make robust!
@@ -71,13 +77,13 @@ begin
   cmd = aliases[cmd] if aliases[cmd]
 
   # Add example external commands to PATH before checking.
-  ENV['PATH'] += ":#{HOMEBREW_REPOSITORY}/Library/Contributions/cmds"
-  if which "brew-#{cmd}"
+  ENV['PATH'] += ":#{HOMEBREW_REPOSITORY}/Library/Contributions/examples"
+  if which("brew-#{cmd}")
     %w[CACHE CELLAR LIBRARY_PATH PREFIX REPOSITORY].each do |e|
       ENV["HOMEBREW_#{e}"] = Object.const_get "HOMEBREW_#{e}"
     end
     exec "brew-#{cmd}", *ARGV
-  elsif require? `/usr/bin/which brew-#{cmd}.rb`
+  elsif require? which("brew-#{cmd}.rb")
     exit 0
   elsif require? HOMEBREW_REPOSITORY/"Library/Homebrew/cmd"/cmd
     Homebrew.send cmd.to_s.gsub('-', '_')
@@ -112,6 +118,4 @@ rescue Exception => e
   puts "    #{Tty.em}#{ISSUES_URL}#{Tty.reset}"
   puts e.backtrace
   exit 1
-else
-  exit 1 if Homebrew.failed?
 end

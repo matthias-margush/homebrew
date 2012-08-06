@@ -34,17 +34,31 @@ module Homebrew extend self
     raise "Cannot write to #{HOMEBREW_PREFIX}" unless HOMEBREW_PREFIX.writable? or HOMEBREW_PREFIX.to_s == '/usr/local'
   end
 
-  def check_xcode
-    require 'cmd/doctor'
-    xcode = Checks.new.check_for_latest_xcode
-    opoo xcode unless xcode.nil?
+  def check_cc
+    if SystemCommand.platform == :mac
+      if MacOS.snow_leopard?
+        if MacOS.llvm_build_version < RECOMMENDED_LLVM
+          opoo "You should upgrade to Xcode 3.2.6"
+        end
+      else
+        if (MacOS.gcc_40_build_version < RECOMMENDED_GCC_40) or (MacOS.gcc_42_build_version < RECOMMENDED_GCC_42)
+          opoo "You should upgrade to Xcode 3.1.4"
+        end
+      end
+    end
+  rescue
+    # the reason we don't abort is some formula don't require Xcode
+    # TODO allow formula to declare themselves as "not needing Xcode"
+    opoo "Xcode is not installed! Builds may fail!"
   end
 
   def check_macports
-    if MacOS.macports_or_fink_installed?
-      opoo "It appears you have MacPorts or Fink installed."
-      puts "Software installed with other package managers causes known problems for"
-      puts "Homebrew. If a formula fails to build, uninstall MacPorts/Fink and try again."
+    if SystemCommand.platform == :mac
+      if MacOS.macports_or_fink_installed?
+        opoo "It appears you have MacPorts or Fink installed."
+        puts "Software installed with other package managers causes known problems for"
+        puts "Homebrew. If a formula fails to build, uninstall MacPorts/Fink and try again."
+      end
     end
   end
 
@@ -60,7 +74,7 @@ module Homebrew extend self
   def perform_preinstall_checks
     check_ppc
     check_writable_install_location
-    check_xcode
+    check_cc
     check_macports
     check_cellar
   end
@@ -76,7 +90,8 @@ module Homebrew extend self
           fi.caveats
           fi.finish
         rescue CannotInstallFormulaError => e
-          ofail e.message
+          onoe e.message
+          exit 1
         end
       end
     end

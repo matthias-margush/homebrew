@@ -1,39 +1,24 @@
-require 'set'
-require 'cmd/missing'
-
 class Volumes
   def initialize
-    @volumes = get_mounts
+    @volumes = []
+    raw_mounts=`/sbin/mount`
+    raw_mounts.split("\n").each do |line|
+      case line
+      when /^(.+) on (\S+) \(/
+        @volumes << [$1, $2]
+      end
+    end
+    # Sort volumes by longest path prefix first
+    @volumes.sort! {|a,b| b[1].length <=> a[1].length}
   end
 
   def which path
-    vols = get_mounts path
-
-    # no volume found
-    if vols.empty?
-      return -1
+    @volumes.each_index do |i|
+      vol = @volumes[i]
+      return i if vol[1].start_with? path.to_s
     end
 
-    vol_index = @volumes.index(vols[0])
-    # volume not found in volume list
-    if vol_index.nil?
-      return -1
-    end
-    return vol_index
-  end
-
-  def get_mounts path=nil
-    vols = []
-    # get the volume of path, if path is nil returns all volumes
-    raw_df = `/bin/df -P #{path}`
-    raw_df.split("\n").each do |line|
-      case line
-      # regex matches: /dev/disk0s2   489562928 440803616  48247312    91%    /
-      when /^(.*)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]{1,3}\%)\s+(.*)/
-        vols << $6
-      end
-    end
-    return vols
+    return -1
   end
 end
 
@@ -47,40 +32,21 @@ end
 
 
 def path_folders
-  @path_folders ||= ENV['PATH'].split(':').collect do |p|
-    begin remove_trailing_slash(File.expand_path(p))
-    rescue ArgumentError
-      onoe "The following PATH component is invalid: #{p}"
-    end
-  end.uniq.compact
+  ENV['PATH'].split(':').collect{|p| remove_trailing_slash(File.expand_path(p))}.uniq
 end
 
-
-# See https://github.com/mxcl/homebrew/pull/9986
-def check_path_for_trailing_slashes
-  bad_paths = ENV['PATH'].split(':').select{|p| p[p.length-1, p.length] == '/'}
-  return if bad_paths.empty?
-  s = <<-EOS.undent
-    Some directories in your path end in a slash.
-    Directories in your path should not end in a slash. This can break other
-    doctor checks. The following directories should be edited:
-  EOS
-  bad_paths.each{|p| s << "    #{p}"}
-  s
-end
 
 # Installing MacGPG2 interferes with Homebrew in a big way
 # http://sourceforge.net/projects/macgpg2/files/
 def check_for_macgpg2
   if File.exist? "/Applications/start-gpg-agent.app" or
-     File.exist? "/Library/Receipts/libiconv1.pkg" or
-     File.exist? "/usr/local/MacGPG2"
+     File.exist? "/Library/Receipts/libiconv1.pkg"
     <<-EOS.undent
       You may have installed MacGPG2 via the package installer.
       Several other checks in this script will turn up problems, such as stray
       dylibs in /usr/local and permissions issues with share and man in /usr/local/.
     EOS
-  end unless File.exist? '/usr/local/MacGPG2/share/gnupg/VERSION'
+  end
 end
 
 def check_for_stray_dylibs
@@ -168,12 +134,22 @@ def check_for_stray_las
 end
 
 def check_for_x11
-  unless MacOS.x11_installed? then <<-EOS.undent
-    X11 is not installed.
-    You don't have X11 installed as part of your OS X installation.
-    This is not required for all formulae, but is expected by some.
-    You can download the latest version of XQuartz from:
-      https://xquartz.macosforge.org
+  unless x11_installed?
+    <<-EOS.undent
+      X11 not installed.
+      You don't have X11 installed as part of your OS X installation.
+      This is not required for all formulae, but is expected by some.
+    EOS
+  end
+end
+
+def check_for_nonstandard_x11
+  x11 = Pathname.new('/usr/X11')
+  if x11.symlink?
+    <<-EOS.undent
+      /usr/X11 is a symlink
+      Homebrew's X11 support has only be tested with Apple's X11.
+      In particular, "XQuartz" and "XDarwin" are not known to be compatible.
     EOS
   end
 end
@@ -190,65 +166,48 @@ def check_for_other_package_managers
   end
 end
 
-def check_for_broken_symlinks
-  broken_symlinks = []
-  %w[lib include sbin bin etc share].each do |d|
-    d = HOMEBREW_PREFIX/d
-    next unless d.directory?
-    d.find do |pn|
-      broken_symlinks << pn if pn.symlink? and pn.readlink.expand_path.to_s =~ /^#{HOMEBREW_PREFIX}/ and not pn.exist?
+def check_gcc_42
+  if MacOS.gcc_42_build_version == nil
+    # Don't show this warning on Xcode 4.2+
+    if MacOS.xcode_version < "4.2"
+      "We couldn't detect gcc 4.2.x. Some formulae require this compiler."
     end
-  end
-  unless broken_symlinks.empty? then <<-EOS.undent
-    Broken symlinks were found. Remove them with `brew prune`:
-      #{broken_symlinks * "\n      "}
+  elsif MacOS.gcc_42_build_version < RECOMMENDED_GCC_42
+    <<-EOS.undent
+      Your gcc 4.2.x version is older than the recommended version.
+      It may be advisable to upgrade to the latest release of Xcode.
     EOS
   end
 end
 
-def check_for_latest_xcode
-  if not MacOS.xcode_installed?
-    # no Xcode, now it depends on the OS X version...
-    if MacOS.version >= 10.7 then
-      if not MacOS.clt_installed?
-        return <<-EOS.undent
-          No Xcode version found!
-          No compiler found in /usr/bin!
-
-          To fix this, either:
-          - Install the "Command Line Tools for Xcode" from http://connect.apple.com/
-            Homebrew does not require all of Xcode, you only need the CLI tools package!
-            (However, you need a (free) Apple Developer ID.)
-          - Install Xcode from the Mac App Store. (Normal Apple ID is sufficient, here)
-        EOS
-      else
-        return <<-EOS.undent
-          Experimental support for using the "Command Line Tools" without Xcode.
-          Some formulae need Xcode to be installed (for the Frameworks not in the CLT.)
-        EOS
-      end
-    else
-      # older Mac systems should just install their old Xcode. We don't advertize the CLT.
-      return <<-EOS.undent
+def check_xcode_exists
+  if MacOS.xcode_version == nil
+      <<-EOS.undent
         We couldn't detect any version of Xcode.
         If you downloaded Xcode from the App Store, you may need to run the installer.
       EOS
+  elsif MacOS.xcode_version < "4.0"
+    if MacOS.gcc_40_build_version == nil
+      "We couldn't detect gcc 4.0.x. Some formulae require this compiler."
+    elsif MacOS.gcc_40_build_version < RECOMMENDED_GCC_40
+      <<-EOS.undent
+        Your gcc 4.0.x version is older than the recommended version.
+        It may be advisable to upgrade to the latest release of Xcode.
+      EOS
     end
   end
+end
+
+def check_for_latest_xcode
+  # the check_xcode_exists check is enough
+  return if MacOS.xcode_version.nil?
 
   latest_xcode = case MacOS.version
     when 10.5 then "3.1.4"
     when 10.6 then "3.2.6"
-    when 10.7 then "4.3.3"
-    when 10.8 then "4.4"
-    else nil
+    else "4.3"
   end
-  if latest_xcode.nil?
-    return <<-EOS.undent
-    Not sure what version of Xcode is the latest for OS X #{MacOS.version}.
-    EOS
-  end
-  if MacOS.xcode_installed? and MacOS.xcode_version < latest_xcode then <<-EOS.undent
+  if MacOS.xcode_version < latest_xcode then <<-EOS.undent
     You have Xcode-#{MacOS.xcode_version}, which is outdated.
     Please install Xcode #{latest_xcode}.
     EOS
@@ -256,26 +215,13 @@ def check_for_latest_xcode
 end
 
 def check_cc
-  unless MacOS.clt_installed?
-    if MacOS.xcode_version >= "4.3"
-      return <<-EOS.undent
-        Experimental support for using Xcode without the "Command Line Tools".
-      EOS
-    else
-      return <<-EOS.undent
-        No compiler found in /usr/bin!
-      EOS
-    end
-  end
-end
-
-def check_standard_compilers
-  return if check_for_latest_xcode # only check if Xcode is up to date
-  if !MacOS.compilers_standard? then <<-EOS.undent
-    Your compilers are different from the standard versions for your Xcode.
-    If you have Xcode 4.3 or newer, you should install the Command Line Tools for
-    Xcode from within Xcode's Download preferences.
-    Otherwise, you should reinstall Xcode.
+  unless File.exist? '/usr/bin/cc'
+    <<-EOS.undent
+      You have no /usr/bin/cc.
+      This means you probably can't build *anything*. You need to install the CLI
+      Tools for Xcode. You can either download this from http://connect.apple.com/
+      or install them from inside Xcode’s preferences. Homebrew does not require
+      all of Xcode! You only need the CLI tools package!
     EOS
   end
 end
@@ -394,21 +340,29 @@ def check_xcode_prefix
   if prefix.to_s.match(' ')
     <<-EOS.undent
       Xcode is installed to a directory with a space in the name.
-      This will cause some formulae to fail to build.
+      This will cause some formulae, such as libiconv, to fail to build.
     EOS
   end
 end
 
 def check_xcode_select_path
-  # with the advent of CLT-only support, we don't need xcode-select
-  return if MacOS.clt_installed?
-  unless File.file? "#{MacOS.xcode_folder}/usr/bin/xcodebuild" and not MacOS.xctools_fucked?
-    path = MacOS.app_with_bundle_id(MacOS::XCODE_4_BUNDLE_ID) || MacOS.app_with_bundle_id(MacOS::XCODE_3_BUNDLE_ID)
-    path = '/Developer' if path.nil? or not path.directory?
+  path = `xcode-select -print-path 2>/dev/null`.chomp
+  unless File.directory? path and File.file? "#{path}/usr/bin/xcodebuild"
+    # won't guess at the path they should use because it's too hard to get right
+    # We specify /Applications/Xcode.app/Contents/Developer even though
+    # /Applications/Xcode.app should work because people don't install the new CLI
+    # tools and then it doesn't work. Lets hope the location doesn't change in the
+    # future.
+
     <<-EOS.undent
       Your Xcode is configured with an invalid path.
-      You should change it to the correct path:
-        sudo xcode-select -switch #{path}
+      You should change it to the correct path. Please note that there is no correct
+      path at this time if you have *only* installed the Command Line Tools for Xcode.
+      If your Xcode is pre-4.3 or you installed the whole of Xcode 4.3 then one of
+      these is (probably) what you want:
+
+          sudo xcode-select -switch /Developer
+          sudo xcode-select -switch /Applications/Xcode.app/Contents/Developer
     EOS
   end
 end
@@ -438,7 +392,7 @@ def check_user_path_1
 
                 #{conflicts * "\n                "}
 
-            Consider amending your PATH so that #{HOMEBREW_PREFIX}/bin
+            Consider ammending your PATH so that #{HOMEBREW_PREFIX}/bin
             is ahead of /usr/bin in your PATH.
           EOS
         end
@@ -456,7 +410,7 @@ def check_user_path_2
   unless $seen_prefix_bin
     <<-EOS.undent
       Homebrew's bin was not found in your path.
-      Consider amending your PATH variable so it contains:
+      Consider ammending your PATH variable so it contains:
         #{HOMEBREW_PREFIX}/bin
     EOS
   end
@@ -469,7 +423,7 @@ def check_user_path_3
     unless $seen_prefix_sbin
       <<-EOS.undent
         Homebrew's sbin was not found in your path.
-        Consider amending your PATH variable so it contains:
+        Consider ammending your PATH variable so it contains:
           #{HOMEBREW_PREFIX}/sbin
       EOS
     end
@@ -477,23 +431,43 @@ def check_user_path_3
 end
 
 def check_which_pkg_config
-  binary = which 'pkg-config'
-  return if binary.nil?
+  binary = `/usr/bin/which pkg-config`.chomp
+  return if binary.empty?
 
-  mono_config = Pathname.new("/usr/bin/pkg-config")
-  if mono_config.exist? && mono_config.realpath.to_s.include?("Mono.framework") then <<-EOS.undent
-    You have a non-Homebrew 'pkg-config' in your PATH:
-      /usr/bin/pkg-config => #{mono_config.realpath}
+  unless binary == "#{HOMEBREW_PREFIX}/bin/pkg-config"
+    <<-EOS.undent
+      You have a non-brew 'pkg-config' in your PATH:
+        #{binary}
 
-    This was most likely created by the Mono installer. `./configure` may
-    have problems finding brew-installed packages using this other pkg-config.
+      `./configure` may have problems finding brew-installed packages using
+      this other pkg-config.
     EOS
-  elsif binary.to_s != "#{HOMEBREW_PREFIX}/bin/pkg-config" then <<-EOS.undent
-    You have a non-Homebrew 'pkg-config' in your PATH:
-      #{binary}
+  end
+end
 
-    `./configure` may have problems finding brew-installed packages using
-    this other pkg-config.
+def check_pkg_config_paths
+  binary = `/usr/bin/which pkg-config`.chomp
+  return if binary.empty?
+
+  # Use the debug output to determine which paths are searched
+  pkg_config_paths = []
+
+  debug_output = `pkg-config --debug 2>&1`
+  debug_output.split("\n").each do |line|
+    line =~ /Scanning directory '(.*)'/
+    pkg_config_paths << $1 if $1
+  end
+
+  # Check that all expected paths are being searched
+  unless pkg_config_paths.include? "/usr/X11/lib/pkgconfig"
+    <<-EOS.undent
+      Your pkg-config is not checking "/usr/X11/lib/pkgconfig" for packages.
+      Earlier versions of the pkg-config formula did not add this path
+      to the search path, which means that other formula may not be able
+      to find certain dependencies.
+
+      To resolve this issue, re-brew pkg-config with:
+        brew rm pkg-config && brew install pkg-config
     EOS
   end
 end
@@ -518,26 +492,22 @@ def check_for_gettext
 end
 
 def check_for_iconv
-  iconv_files = %w[lib/iconv.dylib
-    include/iconv.h].select { |f| File.exist? "#{HOMEBREW_PREFIX}/#{f}" }
-  if !iconv_files.empty?
+  if %w[lib/libiconv.dylib
+        include/iconv.h ].any? { |f| File.exist? "#{HOMEBREW_PREFIX}/#{f}" }
     <<-EOS.undent
-      The following libiconv files were detected in #{HOMEBREW_PREFIX}:
-      #{iconv_files.join "\n      "}
+      libiconv was detected in your PREFIX.
       Homebrew doesn't provide a libiconv formula, and expects to link against
       the system version in /usr/lib.
 
-      If you have an alternate libiconv, many formulae will fail to compile or
-      link, especially if it wasn't compiled with the proper architectures.
+      If you have a non-Homebrew provided libiconv, many formulae will fail
+      to compile or link, especially if it wasn't compiled with the proper
+      architectures.
     EOS
-  else
-    nil
   end
 end
 
 def check_for_config_scripts
-  return unless HOMEBREW_CELLAR.exist?
-  real_cellar = HOMEBREW_CELLAR.realpath
+  real_cellar = HOMEBREW_CELLAR.exist? && HOMEBREW_CELLAR.realpath
 
   config_scripts = []
 
@@ -582,18 +552,7 @@ def check_for_dyld_vars
   end
 end
 
-def check_for_DYLD_INSERT_LIBRARIES
-  if ENV['DYLD_INSERT_LIBRARIES']
-    <<-EOS.undent
-      Setting DYLD_INSERT_LIBRARIES can cause Go builds to fail.
-      Having this set is common if you use this software:
-        http://asepsis.binaryage.com/
-    EOS
-  end
-end
-
 def check_for_symlinked_cellar
-  return unless HOMEBREW_CELLAR.exist?
   if HOMEBREW_CELLAR.symlink?
     <<-EOS.undent
       Symlinked Cellars can cause problems.
@@ -619,7 +578,7 @@ def check_for_multiple_volumes
   real_cellar = HOMEBREW_CELLAR.realpath
 
   tmp_prefix = ENV['HOMEBREW_TEMP'] || '/tmp'
-  tmp = Pathname.new `/usr/bin/mktemp -d #{tmp_prefix}/homebrew-brew-doctor-XXXX`.strip
+  tmp = Pathname.new `#{SystemCommand.mktemp} -d #{tmp_prefix}/homebrew-brew-doctor-XXXX`.strip
   real_temp = tmp.realpath.parent
 
   where_cellar = volumes.which real_cellar
@@ -639,7 +598,7 @@ def check_for_multiple_volumes
 end
 
 def check_for_git
-  unless which "git" then <<-EOS.undent
+  unless which("git") then <<-EOS.undent
     Git could not be found in your PATH.
     Homebrew uses Git for several internal functions, and some formulae use Git
     checkouts instead of stable tarballs. You may want to install Git:
@@ -649,7 +608,7 @@ def check_for_git
 end
 
 def check_git_newline_settings
-  return unless which "git"
+  return unless which("git")
 
   autocrlf = `git config --get core.autocrlf`.chomp
   safecrlf = `git config --get core.safecrlf`.chomp
@@ -670,9 +629,9 @@ end
 def check_for_autoconf
   return if MacOS.xcode_version >= "4.3"
 
-  autoconf = which('autoconf')
+  autoconf = `/usr/bin/which autoconf`.chomp
   safe_autoconfs = %w[/usr/bin/autoconf /Developer/usr/bin/autoconf]
-  unless autoconf.nil? or safe_autoconfs.include? autoconf.to_s then <<-EOS.undent
+  unless autoconf.empty? or safe_autoconfs.include? autoconf then <<-EOS.undent
     An "autoconf" in your path blocks the Xcode-provided version at:
       #{autoconf}
 
@@ -761,18 +720,18 @@ def check_tmpdir
 end
 
 def check_missing_deps
-  return unless HOMEBREW_CELLAR.exist?
-  s = Set.new
-  missing_deps = Homebrew.find_missing_brews(Homebrew.installed_brews)
-  missing_deps.each do |m|
-    s.merge m[1]
+  s = []
+  `brew missing`.each_line do |line|
+    line =~ /(.*): (.*)/
+    $2.split.each do |dep|
+        s << dep unless s.include? dep
+    end
   end
-
   if s.length > 0 then <<-EOS.undent
     Some installed formula are missing dependencies.
     You should `brew install` the missing dependencies:
 
-        brew install #{s.to_a.sort * " "}
+        brew install #{s * " "}
 
     Run `brew missing` for more details.
     EOS
@@ -780,7 +739,7 @@ def check_missing_deps
 end
 
 def check_git_status
-  return unless which "git"
+  return unless which("git")
   HOMEBREW_REPOSITORY.cd do
     unless `git status -s -- Library/Homebrew/ 2>/dev/null`.chomp.empty? then <<-EOS.undent
       You have uncommitted modifications to Homebrew's core.
@@ -809,7 +768,7 @@ end
 
 def check_git_version
   # see https://github.com/blog/642-smart-http-support
-  return unless which "git"
+  return unless system which("git")
   `git --version`.chomp =~ /git version (\d)\.(\d)\.(\d)/
 
   if $2.to_i < 6 or $2.to_i == 6 and $3.to_i < 6 then <<-EOS.undent
@@ -821,7 +780,7 @@ def check_git_version
 end
 
 def check_for_enthought_python
-  if which "enpkg" then <<-EOS.undent
+  if which("enpkg") then <<-EOS.undent
     Enthought Python was found in your PATH.
     This can cause build problems, as this software installs its own
     copies of iconv and libxml2 into directories that are picked up by
@@ -831,7 +790,7 @@ def check_for_enthought_python
 end
 
 def check_for_bad_python_symlink
-  return unless which "python"
+  return unless which("python")
   # Indeed Python --version outputs to stderr (WTF?)
   `python --version 2>&1` =~ /Python (\d+)\./
   unless $1 == "2" then <<-EOS.undent
@@ -841,31 +800,12 @@ def check_for_bad_python_symlink
   end
 end
 
-def check_for_pydistutils_cfg_in_home
-  if File.exist? ENV['HOME']+'/.pydistutils.cfg' then <<-EOS.undent
-    A .pydistutils.cfg file was found in $HOME, which may cause Python
-    builds to fail. See:
-      http://bugs.python.org/issue6138
-      http://bugs.python.org/issue4655
-    EOS
-  end
-end
-
 def check_for_outdated_homebrew
-  return unless which 'git'
-  HOMEBREW_REPOSITORY.cd do
-    if File.directory? ".git"
-      local = `git rev-parse -q --verify refs/remotes/origin/master`.chomp
-      remote = /^([a-f0-9]{40})/.match(`git ls-remote origin refs/heads/master 2>/dev/null`)
-      if remote.nil? || local == remote[0]
-        return
-      end
-    end
-
+  HOMEBREW_PREFIX.cd do
     timestamp = if File.directory? ".git"
       `git log -1 --format="%ct" HEAD`.to_i
     else
-      (HOMEBREW_REPOSITORY/"Library").mtime.to_i
+      (HOMEBREW_PREFIX/"Library").mtime.to_i
     end
 
     if Time.now.to_i - timestamp > 60 * 60 * 24 then <<-EOS.undent
@@ -876,64 +816,26 @@ def check_for_outdated_homebrew
   end
 end
 
-def check_for_unlinked_but_not_keg_only
-  return unless HOMEBREW_CELLAR.exist?
-  unlinked = HOMEBREW_CELLAR.children.reject do |rack|
-    if not rack.directory?
-      true
-    elsif not (HOMEBREW_REPOSITORY/"Library/LinkedKegs"/rack.basename).directory?
-      Formula.factory(rack.basename).keg_only? rescue nil
-    else
-      true
-    end
-  end.map{ |pn| pn.basename }
-
-  if not unlinked.empty? then <<-EOS.undent
-    You have unlinked kegs in your Cellar
-    Leaving kegs unlinked can lead to build-trouble and cause brews that depend on
-    those kegs to fail to run properly once built.
-
-        #{unlinked * "\n        "}
-    EOS
-  end
-end
-
-def check_os_version
-  if MACOS_FULL_VERSION =~ /^10\.6(\.|$)/
-    unless (MACOS_FULL_VERSION == "10.6.8")
-      return <<-EOS.undent
-        Please update Snow Leopard.
-        10.6.8 is the supported version of Snow Leopard.
-        You are still running #{MACOS_FULL_VERSION}.
-      EOS
-    end
-  elsif MACOS_FULL_VERSION =~ /^10\.5(\.|$)/
-    unless (MACOS_FULL_VERSION == "10.5.8")
-      return <<-EOS.undent
-        Please update Leopard.
-        10.5.8 is the supported version of Leopard.
-        You are still running #{MACOS_FULL_VERSION}.
-      EOS
-    end
-  end
-end
-
 end # end class Checks
 
 module Homebrew extend self
   def doctor
+    raring_to_brew = true
+
     checks = Checks.new
 
     checks.methods.select{ |method| method =~ /^check_/ }.sort.each do |method|
       out = checks.send(method)
       unless out.nil? or out.empty?
-        puts unless Homebrew.failed?
+        puts unless raring_to_brew
         lines = out.to_s.split('\n')
-        ofail lines.shift
+        opoo lines.shift
         puts lines
+        raring_to_brew = false
       end
     end
 
-    puts "Your system is raring to brew." unless Homebrew.failed?
+    puts "Your system is raring to brew." if raring_to_brew
+    exit raring_to_brew ? 0 : 1
   end
 end

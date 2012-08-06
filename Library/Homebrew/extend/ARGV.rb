@@ -1,5 +1,3 @@
-require 'bottles'
-
 module HomebrewArgvExtension
   def named
     @named ||= reject{|arg| arg[0..0] == '-'}
@@ -16,7 +14,6 @@ module HomebrewArgvExtension
   end
 
   def kegs
-    rack = nil
     require 'keg'
     require 'formula'
     @kegs ||= downcased_unique_named.collect do |name|
@@ -48,17 +45,6 @@ module HomebrewArgvExtension
         Keg.new(linked_keg_ref.realpath)
       end
     end
-  rescue FormulaUnavailableError
-    if rack
-      raise <<-EOS.undent
-        Multiple kegs installed to #{rack}
-        However we don't know which one you refer to.
-        Please delete (with rm -rf!) all but one and then try again.
-        Sorry, we know this is lame.
-      EOS
-    else
-      raise
-    end
   end
 
   # self documenting perhaps?
@@ -87,24 +73,21 @@ module HomebrewArgvExtension
   def one?
     flag? '--1'
   end
-  def dry_run?
-    include?('--dry-run') || switch?('n')
-  end
 
   def build_head?
-    include? '--HEAD'
+    flag? '--HEAD'
   end
 
   def build_devel?
     include? '--devel'
   end
 
-  def build_stable?
-    not (build_head? or build_devel?)
-  end
-
   def build_universal?
     include? '--universal'
+  end
+
+  def forcelinux?
+    flag? '--forcelinux'
   end
 
   # Request a 32-bit only build.
@@ -115,12 +98,14 @@ module HomebrewArgvExtension
   end
 
   def build_bottle?
-    bottles_supported? and include? '--build-bottle'
+    if SystemCommand.platform == :mac
+      MacOS.bottles_supported? and include? '--build-bottle'
+    end
   end
 
   def build_from_source?
     flag? '--build-from-source' or ENV['HOMEBREW_BUILD_FROM_SOURCE'] \
-      or not bottles_supported? or not options_only.empty?
+      or not MacOS.bottles_supported? or not options_only.empty?
   end
 
   def flag? flag
