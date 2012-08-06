@@ -36,7 +36,7 @@ class Formula
       @spec_to_use = @unstable
     else
       if @standard.nil?
-        @spec_to_use = SoftwareSpecification.new(@url, @specs)
+        @spec_to_use = SoftwareSpec.new(@url, @specs)
       else
         @spec_to_use = @standard
       end
@@ -650,14 +650,14 @@ private
 
     def head val=nil, specs=nil
       return @head if val.nil?
-      @unstable = SoftwareSpecification.new(val, specs)
+      @unstable = SoftwareSpec.new(val, specs)
       @head = val
       @specs = specs
     end
 
     def url val=nil, specs=nil
       return @url if val.nil?
-      @standard = SoftwareSpecification.new(val, specs)
+      @standard = SoftwareSpec.new(val, specs)
       @url = val
       @specs = specs
     end
