@@ -88,7 +88,7 @@ class FormulaCreator
     end
 
     unless ARGV.include? "--no-fetch" and version
-      spec = SoftwareSpec.new(url, version)
+      spec = SoftwareSpecification.new(url, version)
       strategy = spec.download_strategy
       @sha1 = strategy.new(name, spec).fetch.sha1 if strategy == CurlDownloadStrategy
     end

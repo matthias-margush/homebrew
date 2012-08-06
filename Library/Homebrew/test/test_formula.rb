@@ -71,7 +71,7 @@ class FormulaTests < Test::Unit::TestCase
     assert_equal CurlDownloadStrategy, f.download_strategy
     assert_instance_of CurlDownloadStrategy, f.downloader
 
-    assert_instance_of SoftwareSpec, f.stable
+    assert_instance_of SoftwareSpecification, f.stable
     assert_instance_of Bottle, f.bottle
     assert_instance_of SoftwareSpec, f.devel
     assert_instance_of HeadSoftwareSpec, f.head
