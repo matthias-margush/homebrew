@@ -36,8 +36,8 @@ end
 
 class Openimageio < Formula
   homepage 'http://openimageio.org'
-  url 'https://github.com/OpenImageIO/oiio/tarball/Release-1.0.4'
-  sha1 '8ee14c433e81cd1db5eded4fc604c492a5857874'
+  url 'https://github.com/OpenImageIO/oiio/tarball/Release-1.0.8'
+  sha1 '9ac265c279392117025cc18061742c3c1392d549'
 
   head 'https://github.com/OpenImageIO/oiio.git'
 
