@@ -27,9 +27,10 @@ class Gstreamer < Formula
     ENV.append "CFLAGS", "-funroll-loops -fstrict-aliasing -fno-common"
 
     system "./configure", "--prefix=#{prefix}",
-                          "--disable-debug",
-                          "--disable-dependency-tracking",
-                          "--enable-introspection=no"
+                          "--enable-gst-debug=yes"
+                          #"--disable-debug",
+                          #"--disable-dependency-tracking",
+                          #"--enable-introspection=no"
     system "make"
     system "make install"
   end
